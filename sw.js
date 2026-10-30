@@ -1,6 +1,6 @@
 // Ricochet Keep offline worker. Serves the game from the cache (it works with no signal) and
 // refreshes the cache in the background when online.
-const CACHE = 'ricochet-keep-fee1ed359d';
+const CACHE = 'ricochet-keep-21a3d0e429';
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-180.png", "./icon-192.png", "./icon-512.png"];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

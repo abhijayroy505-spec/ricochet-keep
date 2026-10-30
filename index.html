@@ -178,7 +178,8 @@ button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 
 .card[hidden] { display: none; }
 .card .tag { position: absolute; top: -7px; right: 8px; background: var(--coral); color: #fff; font-size: 10px; font-weight: 800; letter-spacing: .06em;
   text-transform: uppercase; border-radius: 6px; padding: 1px 6px; }
-.card { position: relative; }
+.card { position: relative; touch-action: none; }
+.card img { -webkit-user-drag: none; pointer-events: none; }
 @media (max-height: 800px) {
   #panel, .ptop, .pbot { gap: 9px; }
   #panel { padding-top: 14px; }
@@ -950,7 +951,7 @@ function startWave(n) {
     title: S.mode === 'endless' ? `Wave ${n}` : last ? 'Final wave' : `Wave ${n} of ${S.waveCount}`,
     sub: bossy ? 'Something big is coming…' : waveTip(n), t: 0, dur: 2.6,
   };
-  if (n === 1 && S.mode === 'level' && firstTime('aim')) { S.gesture = true; showHint(AIM_TEXT, 8, 1.2, () => S.stats.shots >= 2); }
+  if (n === 1 && S.mode === 'level' && !SAVE.seen.aimed) { S.gesture = true; showHint(AIM_TEXT, 8, 1.2, () => S.stats.shots >= 2); }
   hideOverlay();
 }
 function spawnTick(dt) {
@@ -1037,10 +1038,10 @@ function takeCharm(id) {
 function openShop() {
   S.phase = 'build';
   checkpoint();
-  if (firstTime('build')) {
+  if (S.mode !== 'demo' && !SAVE.seen.placed) {
     const n0 = S.bumpers.length;
     S.teach = 'shop';
-    showHint(`${Tap} a bumper in the shop, then ${tap} the meadow to place it`, 9, 0.6, () => S.bumpers.length > n0 || S.phase !== 'build');
+    showHint('Drag a bumper from the shop onto the meadow', 9, 0.6, () => S.bumpers.length > n0 || S.phase !== 'build');
   }
 }
 // Time of day follows the land: morning to noon in the meadow, golden hour in the marsh, night in the ruins.
@@ -1073,6 +1074,7 @@ function fire() {
   if (S.fireCd > 0) return;
   if (S.ammo <= 0) { S.trayFlash = 0.35; Sfx.play('empty'); return; }
   S.ammo--; S.fireCd = 0.14; S.recoil = 1; S.stats.shots++; S.idleT = 0;
+  if (S.mode === 'level' && S.stats.shots >= 2 && !SAVE.seen.aimed) { SAVE.seen.aimed = 1; saveGame(); }
   const dx = Math.cos(S.aim), dy = Math.sin(S.aim);
   const m = newMarble(LX + dx * 34, LY + dy * 34, dx * LAUNCH_SPEED, dy * LAUNCH_SPEED);
   if (charm('sharp')) m.bounces = 2;
@@ -2534,6 +2536,7 @@ function tryPlace(p) {
   S.placing = null;
   Sfx.play('place', { pan: b.x / W * 2 - 1 });
   if (S.teach === 'shop') S.teach = 'start';
+  if (!SAVE.seen.placed) { SAVE.seen.placed = 1; saveGame(); }
   if (firstTime('place')) showHint(TOUCH ? 'Tap a bumper to upgrade or sell it. Drag it to move it.' : 'Click a bumper to upgrade or sell it. Drag it to move it.', 5.5, 0.3);
 }
 function upgrade(b) {
@@ -2657,8 +2660,8 @@ function makeCard(type, name, blurb, cost, color, onClick) {
   el.className = 'card';
   el.style.setProperty('--c', color);
   el.setAttribute('aria-label', `${name}: ${blurb}`);
-  el.innerHTML = `<img src="${icons[type]}" alt=""><span><span class="nm">${name}</span><span class="bl">${blurb}</span></span><span class="cost">${cost}</span><span class="tag" hidden>New</span>`;
-  el.addEventListener('click', onClick);
+  el.innerHTML = `<img src="${icons[type]}" alt="" draggable="false"><span><span class="nm">${name}</span><span class="bl">${blurb}</span></span><span class="cost">${cost}</span><span class="tag" hidden>New</span>`;
+  el.addEventListener('click', e => { if (swallowClick) return; onClick(e); });
   ui.shop.appendChild(el);
   shopCards.push({ type, el, costEl: el.querySelector('.cost'), tag: el.querySelector('.tag') });
 }
@@ -2672,6 +2675,39 @@ for (const t of ORDER) {
   });
 }
 makeCard('marble', 'Extra marble', 'One more marble in your tray.', 60, '#4a90e2', buyMarble);
+// Drag a bumper straight from the shop onto the meadow. A plain tap still picks it up for tap-to-place.
+let shopDrag = null, swallowClick = false;
+for (const c of shopCards) {
+  if (c.type === 'marble') continue;
+  c.el.addEventListener('pointerdown', e => {
+    if (S.phase !== 'build' || c.el.disabled || e.button !== 0 || shopDrag) return;
+    shopDrag = { type: c.type, id: e.pointerId, x: e.clientX, y: e.clientY, moved: false, touch: e.pointerType !== 'mouse' };
+    try { c.el.setPointerCapture(e.pointerId); } catch (err) { /* works without capture too */ }
+  });
+  c.el.addEventListener('pointermove', e => {
+    const d = shopDrag;
+    if (!d || e.pointerId !== d.id) return;
+    if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 8) { d.moved = true; deselect(); S.placing = d.type; }
+    if (!d.moved) return;
+    const r = canvas.getBoundingClientRect(), p = toBoard(e);
+    S.mouse.x = p.x; S.mouse.y = d.touch ? p.y - LIFT : p.y;
+    S.mouse.inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  });
+  const end = (e, cancelled) => {
+    const d = shopDrag;
+    if (!d || e.pointerId !== d.id) return;
+    shopDrag = null;
+    if (!d.moved) return;
+    swallowClick = true;
+    setTimeout(() => { swallowClick = false; }, 0);
+    const before = S.bumpers.length;
+    if (!cancelled && S.mouse.inside && S.phase === 'build') tryPlace({ x: S.mouse.x, y: S.mouse.y });
+    if (S.bumpers.length === before) S.placing = null;  // dropped off the meadow, or the spot was taken
+    S.mouse.inside = false;
+  };
+  c.el.addEventListener('pointerup', e => end(e, false));
+  c.el.addEventListener('pointercancel', e => end(e, true));
+}
 
 const textCache = new Map();
 function setText(el, v) {
@@ -2940,7 +2976,7 @@ function showOverlay(kind) {
       <div class="ov-row"><button class="ghost-btn" data-act="settings">Settings</button></div></div>`;
   } else if (kind === 'help') {
     const how = [AIM_TEXT + '. Marbles roll back to your tray.', 'Every bounce off a wall, rock or bumper makes the next hit stronger.',
-      `Between waves: pick a charm, buy bumpers, ${tap} one to upgrade or sell it, drag to move it.`, 'Stars: clear the level, keep 5 hearts, lose at most 1 heart.'];
+      `Between waves: pick a charm, drag bumpers from the shop onto the meadow, ${tap} one to upgrade or sell it.`, 'Stars: clear the level, keep 5 hearts, lose at most 1 heart.'];
     html = `<div class="ov-card"><h2>How to play</h2><ul class="how">${how.map((h, i) => `<li><b>${i + 1}</b>${h}</li>`).join('')}</ul>
       <div class="ov-row"><button class="big-btn" data-act="back">Got it</button></div></div>`;
   } else if (kind === 'settings') {
