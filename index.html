@@ -262,7 +262,12 @@ body.phone .title-screen { padding-top: max(calc(var(--bw) * .13), env(safe-area
 .play-btn { height: 62px; font-size: 24px; border-radius: 20px; box-shadow: 0 5px 0 var(--coral-d), 0 14px 28px rgba(0, 0, 0, .35); }
 .title-note { color: #fff6dd; font-size: 13.5px; font-weight: 700; text-shadow: 0 1px 3px rgba(0, 0, 0, .8); }
 .title-icons { display: flex; gap: 14px; margin-top: 2px; }
-.title-tip { color: #fff6dd; font-size: 12.5px; line-height: 1.4; background: rgba(18, 26, 34, .6); border-radius: 12px; padding: 7px 12px; }
+.install-btn { color: #fff6dd; font-size: 13.5px; font-weight: 800; background: rgba(18, 26, 34, .66); border-radius: 14px; padding: 9px 16px; }
+.how li span b { width: auto; height: auto; display: inline; background: none; color: inherit; font-size: inherit; border-radius: 0; }
+.toast { position: fixed; left: 50%; bottom: max(28px, env(safe-area-inset-bottom, 0px)); z-index: 20; transform: translateX(-50%); max-width: calc(100vw - 32px);
+  background: rgba(29, 42, 51, .95); color: #fff6e0; font-size: 14px; font-weight: 700; text-align: center; overflow-wrap: anywhere;
+  padding: 10px 16px; border-radius: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, .35); opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
 .map-screen { min-height: 100%; background: #1d2a33; }
 .map-top { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
   background: rgba(29, 42, 51, .94); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); box-shadow: 0 4px 14px rgba(0, 0, 0, .25); }
@@ -2786,7 +2791,40 @@ const ICON = {
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.7 2.5l.5 2.4c.6.2 1.2.5 1.7.9l2.3-.8 1.7 3-1.8 1.6c.1.6.1 1.2 0 1.8l1.8 1.6-1.7 3-2.3-.8c-.5.4-1.1.7-1.7.9l-.5 2.4h-3.4l-.5-2.4c-.6-.2-1.2-.5-1.7-.9l-2.3.8-1.7-3 1.8-1.6a6 6 0 0 1 0-1.8L4.1 8l1.7-3 2.3.8c.5-.4 1.1-.7 1.7-.9l.5-2.4zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>',
   map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></svg>',
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7.5 7.5L12 3l4.5 4.5"/><path d="M8 10.5H6.5A1.5 1.5 0 0 0 5 12v7.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V12a1.5 1.5 0 0 0-1.5-1.5H16"/></svg>',
 };
+// Sharing always sends the hosted game, whichever copy is open (the home-screen app, the laptop file or a preview).
+const SHARE_URL = 'https://abhijayroy505-spec.github.io/ricochet-keep/';
+async function shareGame() {
+  const data = { title: 'Ricochet Keep', text: 'Try Ricochet Keep, a little marble game. Open it in Safari and add it to your Home Screen to play it like an app.', url: SHARE_URL };
+  try {
+    if (navigator.share) { await navigator.share(data); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  if (await copyText(SHARE_URL)) toast('Link copied. Paste it into a message.');
+  else toast(SHARE_URL, 7);
+}
+async function copyText(text) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch (e) { /* try the old way */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;left:-9999px;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (e) { return false; }
+}
+let toastTimer = 0;
+function toast(text, sec = 2.6) {
+  let el = document.getElementById('toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; el.className = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), sec * 1000);
+}
+// Opened in iPhone Safari rather than from the home screen: offer the install steps.
+const canInstall = () => window.__RK_APP && IOS && !navigator.standalone && !(window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 // The world map: one painted panel per land, five stops on a dotted trail, the boss last.
 const MAP_PTS = [[26, 22], [72, 40], [30, 60], [70, 78], [50, 99]];
 function trailPath(pts) {
@@ -2850,7 +2888,6 @@ function showOverlay(kind) {
   let html = '';
   if (kind === 'title') {
     const r = savedRun(), total = totalStars();
-    const app = window.__RK_APP && IOS && !navigator.standalone;
     html = `<div class="title-screen">
       <div class="title-top"><div class="logo" role="img" aria-label="Ricochet Keep"><span class="l1">Ricochet</span><span class="l2">Keep</span></div>
       <p class="tagline">Bounce marbles. Pop critters. Save the keep.</p></div>
@@ -2860,9 +2897,10 @@ function showOverlay(kind) {
         <div class="title-icons">
           ${r ? `<button class="round-btn" data-act="map" aria-label="World map">${ICON.map}</button>` : ''}
           <button class="round-btn" data-act="help" aria-label="How to play">?</button>
+          <button class="round-btn" data-act="share" aria-label="Share the game">${ICON.share}</button>
           <button class="round-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button>
         </div>
-        ${app ? '<p class="title-tip">Tip: tap Share, then “Add to Home Screen” to play full screen, even offline.</p>' : ''}
+        ${canInstall() ? '<button class="install-btn" data-act="install">Install on your iPhone</button>' : ''}
       </div></div>`;
   } else if (kind === 'map') {
     html = mapHTML();
@@ -2909,8 +2947,15 @@ function showOverlay(kind) {
     const row = (act, label, val, on) => `<button class="set-row" data-act="${act}"><span>${label}</span><b class="${on ? 'on' : ''}">${val}</b></button>`;
     html = `<div class="ov-card"><h2>Settings</h2><div class="set-list">
       ${row('music', 'Music', Sfx.musicOn ? 'On' : 'Off', Sfx.musicOn)}${row('sound', 'Sound effects', Sfx.muted ? 'Off' : 'On', !Sfx.muted)}
-      ${row('help', 'How to play', '›', false)}${S.mode === 'demo' ? `<button class="set-row danger" data-act="reset"><span>Reset progress</span><b>›</b></button>` : ''}</div>
+      ${row('help', 'How to play', '›', false)}${row('share', 'Share the game', '›', false)}${S.mode === 'demo' ? `<button class="set-row danger" data-act="reset"><span>Reset progress</span><b>›</b></button>` : ''}</div>
       <div class="ov-row"><button class="big-btn" data-act="back">Done</button></div></div>`;
+  } else if (kind === 'install') {
+    const steps = ['Make sure this page is open in <b>Safari</b>. If it opened inside WhatsApp or another app, tap <b>⋯</b> or the compass and choose Open in Safari.',
+      'Tap <b>⋯</b> at the bottom right, then <b>Share</b>. On older iPhones, tap the Share icon: a square with an arrow.',
+      'Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.',
+      'Open Ricochet Keep from your home screen. It plays full screen, even offline.'];
+    html = `<div class="ov-card"><h2>Install on iPhone</h2><ul class="how">${steps.map((h, i) => `<li><b>${i + 1}</b><span>${h}</span></li>`).join('')}</ul>
+      <div class="ov-row"><button class="big-btn" data-act="back">Got it</button></div></div>`;
   } else if (kind === 'reset') {
     html = `<div class="ov-card"><h2>Start over?</h2><p class="sub">This erases all ${totalStars()} stars and every unlocked level. It can't be undone.</p>
       <div class="ov-row"><button class="big-btn" data-act="back">Keep my progress</button><button class="ghost-btn danger" data-act="wipe">Erase</button></div></div>`;
@@ -2980,7 +3025,8 @@ ui.overlay.addEventListener('click', e => {
   else if (act === 'quit') { clearCheckpoint(); toMap(); }
   else if (act === 'music') { Sfx.toggleMusic(); showOverlay(ui.overlay.dataset.kind); }
   else if (act === 'sound') { Sfx.toggle(); showOverlay(ui.overlay.dataset.kind); }
-  else if (act === 'help' || act === 'settings' || act === 'reset') openOver(act);
+  else if (act === 'help' || act === 'settings' || act === 'reset' || act === 'install') openOver(act);
+  else if (act === 'share') shareGame();
   else if (act === 'back') goBack();
   else if (act === 'wipe') { resetProgress(); navStack.length = 0; menuState(); showOverlay('title'); }
 });
